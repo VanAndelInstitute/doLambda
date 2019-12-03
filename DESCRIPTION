@@ -1,0 +1,15 @@
+Package: doLambda
+Title: AWS Lambda As doParallel Backend
+Version: 0.0.0.9000
+Authors@R: 
+    person(given = "Eric",
+           family = "Kort",
+           role = c("aut", "cre"),
+           email = "eric.kort@vai.org",
+           comment = c(ORCID = "0000-0002-9966-7483"))
+Description: Uses AWS Lambda as the computational 
+  backend for doParallel, with S3 serving as the 
+  queue.
+License: MIT + License
+Encoding: UTF-8
+LazyData: true
