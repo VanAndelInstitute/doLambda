@@ -3,7 +3,6 @@
 # inspiration from doMPI (Steve Weston)
 #
 
-
 .doLambdaGlobals <- new.env(parent=emptyenv())
 
 #' registerDoLambda
@@ -55,7 +54,7 @@ registerDoLambda <- function(bucket,
   setDoPar(fun = .doLambda,
            data = list(bucket = bucket),
            info = .info)
-
+  invisible()
 }
 
 # Internal. A foreach requirement.
@@ -66,4 +65,21 @@ registerDoLambda <- function(bucket,
          name="doLambda",
          version=packageDescription("doLambda", fields="Version"),
          NULL)
+}
+
+enqueue <- function(jobid) {}
+
+dequeue <- function(jobid) {}
+
+
+# internal. all the magic.
+.doLambda <- function() {
+  if (!inherits(obj, "foreach"))
+    stop("obj must be a foreach object")
+  it <- iter(obj)
+  argsList <- .to.list(it)
+
+  # create environment
+
+  # job to S3
 }
