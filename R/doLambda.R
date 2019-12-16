@@ -1,41 +1,44 @@
-#   Copyright 2019 Eric J. Kort
+# Copyright 2019 Eric J. Kort. Code from doMC package Copyright (c) 2008-2010, 
+# Revolution Analytics. Code from doMPI package Copyright (c) 2009--2013, 
+# Stephen B. Weston.
 #
-#   Permission is hereby granted, free of charge, to any person obtaining a copy
-#   of this software and associated documentation files (the "Software"), to
-#   deal in the Software without restriction, including without limitation the
-#   rights to use, copy, modify, merge, publish, distribute, sublicense, and/or
-#   sell copies of the Software, and to permit persons to whom the Software is
-#   furnished to do so, subject to the following conditions:
+# This program is free software; you can redistribute it and/or modify 
+# it under the terms of the GNU General Public License (version 2) as 
+# published by the Free Software Foundation.
 #
-#   The above copyright notice and this permission notice shall be included in
-#   all copies or substantial portions of the Software.
-#  
-#   This code was adapted from the doRedis package by B. W. Lewis.
+# This program is distributed in the hope that it will be useful, 
+# but WITHOUT ANY WARRANTY; without even the implied warranty of 
+# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the GNU 
+# General Public License for more details.
 #
-#   The environment initialization code is adapted (with minor changes)
-#   from the doMPI package from Steve Weston.
-#   
+# A copy of the GNU General Public License is available at
+# http://www.r-project.org/Licenses/
+#
+# This code was adapted from the doMC package by Rich Calaway, and the doMPI
+# package by Stephen B. Weston, and many parts of it remain verbatim as they 
+# appear in those packages.
+#
+.doLambdaOptions <- new.env(parent=emptyenv())
 
 #' registerDoLambda
 #'
 #' Tell doPar to use this backend.
 #'
 #' @param bucket name of an S3 bucket you own that will hold the job queue
-#' @param key AWS Access Key. If not provided, will be retrieved from
-#'            AWS_ACCESS_KEY_ID environment variable.
-#' @param secret AWS Secret Key. If not provided, will be retrieved from
-#'            AWS_SECRET_ACCESS_KEY environment variable.
-#' @param region AWS Default Region. If not provided, will be retrieved from
-#'            AWS_DEFAULT_REGION environment variable.
+#' @param key AWS Access Key. 
+#' @param secret AWS Secret Key. 
+#' @param region AWS Default Region. 
+#' 
+#' @note If credentials are not provided (key, secret, and region), asw,signature 
+#' will be used to locate them by searching in the following order: environment 
+#' variables (`AWS_ACCESS_KEY`, `AWS_SECRET_ACCESS_KEY`, and `AWS_DEFAULT_REGION`),
+#' ./.aws/credentials, and finally ~/.aws/credentials. If no credentials can be 
+#' found, the function will throw an error.
 #'
 #' @return nothing. Called for side effect of registering doParallel backend.
 #' @importFrom foreach foreach %do%
-#' @importFrom jsonlite fromJSON
-#' @importFrom RCurl getForm
+#' @importFrom iterators iter
 #' @export
-#
-# TO DO: Does running aws configure eliminate the need to specify credentials?
-#
 registerDoLambda <- function(bucket,
                              key=NULL,
                              secret=NULL,
@@ -44,57 +47,112 @@ registerDoLambda <- function(bucket,
   cred <- list()
   cred$key <- ifelse(!is.null(key),
                      key,
-                     Sys.getenv("AWS_ACCESS_KEY_ID"))
+                     aws.signature::locate_credentials()$key)
   if(!!nchar(cred$key))
     stop("No AWS credentials provided.")
-
+  
   cred$secret <- ifelse(!is.null(secret),
-                     secret,
-                     Sys.getenv("AWS_SECRET_ACCESS_KEY"))
+                        secret,
+                        aws.signature::locate_credentials()$secret)
   if(!!nchar(cred$key))
     stop("No AWS credentials provided.")
-
+  
   cred$region <- ifelse(!is.null(region),
-                     region,
-                     Sys.getenv("AWS_DEFAULT_REGION"))
+                        region,
+                        aws.signature::locate_credentials()$region)
   if(!!nchar(cred$key))
     stop("No AWS credentials provided.")
-
-  assign("credentials", cred, envir = .doLambdaGlobals)
-
-  setDoPar(fun = .doLambda,
+  
+  assign("credentials", cred, envir = .doLambdaOptions)
+  if(!aws.s3::bucket_exists(bucket)) 
+    aws.s3::put_bucket(buckey, cred$region)
+  setDoPar(fun = doLambda,
            data = list(bucket = bucket),
-           info = .info)
-  invisible()
+           info = info)
 }
 
-# Internal. A foreach requirement.
-.info <- function(data, item)
-{
+# passed to setDoPar via registerDoLambda, and called by getDoParWorkers, etc
+info <- function(data, item) {
   switch(item,
-         workers= 1, # a bald faced lie. will come back to it.
-         name="doLambda",
-         version=packageDescription("doLambda", fields="Version"),
+         workers=workers(data),
+         name='doMC',
+         version=packageDescription('doMC', fields='Version'),
          NULL)
 }
 
-#' removeQueue
-#' 
-#' Remove queue from S3 bucket.
-#' 
-#' @param queue the doRedis queue name
-#'
-#' @note Workers listening for work on more than one queue will only
-#' terminate after all their queues have been deleted.
-#'
-#' @return
-#' NULL is invisibly returned.
-#'
-#' @import rredis
-#' @export
-removeQueue <- function(queue)
-{
-  invisible()
+lambdaExec <- function(path, bucket) {
+  # load obj from S3
+  obj <- aws.s3::s3readRDS(path, bucket)
+  expr <- obj$expr
+  envir <- obj$envir
+  enclos <- obj$enclos
+  arg <- obj$arg
+  c.expr <- compiler::compile(expr, env=envir, options=list(suppressUndefined=TRUE))
+  res <- eval(c.expr, envir=arg, enclos = enclos)
+  # write result to S3
+  # remove job from S3
+}
+
+idgen <- function() {
+  time_ms <- paste0(round(as.numeric(Sys.time())*1000))
+  paste(Sys.getpid(), 
+                    basename(tempfile("")), 
+                    time_ms, 
+                    sep = "")
+}
+
+doLambda <- function(obj, expr, envir, data) {
+  stackid <- idgen()
+  
+  if (!inherits(obj, 'foreach'))
+    stop('obj must be a foreach object')
+  
+  exportenv <- .makeEnv(obj, expr, envir)
+  it <- iter(obj)
+  argsList <- as.list(it)
+  accumulator <- makeAccum(it)
+  
+  # make sure all of the necessary libraries have been loaded
+  for (p in obj$packages)
+    library(p, character.only=TRUE)
+  
+  job <- 1
+  for(a in argsList) {
+    obj <- list( expr = expr, 
+                 envir = envir,
+                 enclos = exportenv,
+                 arg = a)
+    aws.s3::s3saveRDS(obj, paste0(stackid, job, ".rds"), bucket)
+    job <- job + 1
+  }
+  totjobs <- job - 1
+  
+  # poll for job completion...
+  complete <- 0
+  while(complete < totjobs) {
+    # count files in out
+    # update progress bar if applicable
+  }
+  
+  # fetch results
+  job <- 1
+  results <- foreach(a=argsList) %do% {
+    res <- aws.s3::s3readRDS(paste0(stackid, "/outs/", jobid, job, ".rds"), bucket)
+    job <- job + 1
+  }
+  accumulator(results, seq(along=results))
+  
+  errorValue <- getErrorValue(it)
+  errorIndex <- getErrorIndex(it)
+  
+  # throw an error or return the combined results
+  if (identical(obj$errorHandling, 'stop') && !is.null(errorValue)) {
+    msg <- sprintf('task %d failed - "%s"', errorIndex,
+                   conditionMessage(errorValue))
+    stop(simpleError(msg, call=expr))
+  } else {
+    getResult(it)
+  }
 }
 
 # internal
@@ -104,112 +162,40 @@ removeQueue <- function(queue)
   function() NULL
 }
 
-# internal. all the magic.
-#
-# TODO: what is data?
-#
-#' @importFrom aws.s3 save_object
-.doLambda <- function(obj, expr, envir, data) {
-  if (!inherits(obj, "foreach"))
-    stop("obj must be a foreach object")
-  it <- iter(obj)
-  argsList <- .to.list(it)
-  
-  ID <- basename(tempfile(pattern = ""))
-  # tempfile can produce the same name if used in multiple threads; adding PID avoids this problem
-  ID <- paste(Sys.getpid(), ID, sep = "")
-  
-  # ID from doRedis is fortified with user name and time, but I do not (yet) see the 
-  # need for that in this context (other than possibly debugging)
-  # ID <- paste( ID, Sys.info()["user"], Sys.info()["nodename"], Sys.time(), sep="_")
-  # ID <- gsub(" ", "-", ID)  
-  
-  queue <- data$bucket
-  queueEnv <- paste("env", ID, sep=".")
-  queueOut <- paste("out", ID, sep=".")
-  queueStart <- paste("start", ID, sep=".")
-  queueStart <- paste(queueStart, "*", sep="")
-  queueAlive <- paste(queue,"alive", ID, sep=".")
-  queueAlive <- paste(queueAlive, "*", sep="")
-  
-  if (!inherits(obj, "foreach"))
-    stop("obj must be a foreach object")
-  
-  gather <- it$combineInfo$fun
-  
-  exportenv <- .init_env()
-  
-  # save queue environment to S3
-  aws.s3::s3saveRDS(exportenv, queueEnv, queue)
-  
-}
-
-.init_env <- function() {
-  # Verbatim from doRedis and nearly verbatim from doMPI
-  
-  # Setup the parent environment by first attempting to create an environment
-  # that has '...' defined in it with the appropriate values
+# internal
+.makeEnv <- function(obj, expr, envir) {
+  # IF `...` exists in the calling environment, load its elements with 
+  # their appropriate names and return that environment
   exportenv <- tryCatch({
     qargs <- quote(list(...))
     args <- eval(qargs, envir)
-    environment(do.call(.makeDotsEnv, args))
+    environment(do.call(.makeDotsEnv, args)) 
   },
+  # otherwise we create a new environment from scratch
   error=function(e) {
     new.env(parent=emptyenv())
   })
+  
+  # don't export explicitly blacklisted variables, nor the iterator variable
   noexport <- union(obj$noexport, obj$argnames)
-  getexports(expr, exportenv, envir, bad=noexport)
-  vars <- ls(exportenv)
-  if (obj$verbose) {
-    if (length(vars) > 0) {
-      cat("automatically exporting the following objects",
-          "from the local environment:\n")
-      cat(" ", paste(vars, collapse=", "), "\n")
-    } else {
-      cat("no objects are automatically exported\n")
-    }
-  }
-  # Compute list of variables to export
-  export <- unique(c(obj$export, .doRedisGlobals$export))
+  
+  # load everything else from calling environment into our new environment 
+  getexports(expr, exportenv, envir, good=ls(envir), bad=noexport)
+  
+  # load requested objects from outside the calling environment
+  export <- unique(obj$export)
   ignore <- intersect(export, vars)
-  if (length(ignore) > 0) {
-    warning(sprintf("already exporting objects(s): %s",
-                    paste(ignore, collapse=", ")))
-    export <- setdiff(export, ignore)
-  }
-  # Add explicitly exported variables to exportenv
-  if (length(export) > 0) {
-    if (obj$verbose)
-      cat(sprintf("explicitly exporting objects(s): %s\n",
-                  paste(export, collapse=", ")))
-    for (sym in export) {
-      if (!exists(sym, envir, inherits=TRUE))
-        stop(sprintf("unable to find variable \"%s\"", sym))
-      assign(sym, get(sym, envir, inherits=TRUE),
-             pos=exportenv, inherits=FALSE)
+  export <- setdiff(export, ignore)
+  for (sym in export) {
+    if (!exists(sym, envir, inherits=TRUE))
+      stop(sprintf('unable to find variable "%s"', sym))
+    val <- get(sym, envir, inherits=TRUE)
+    if (is.function(val) &&
+        (identical(environment(val), .GlobalEnv) ||
+         identical(environment(val), envir))) {
+      environment(val) <- exportenv
     }
+    assign(sym, val, pos=exportenv, inherits=FALSE)
   }
   exportenv
-}
-
-## unimplemented functions follow. 
-## where applicable, might implement in the future
-
-# note that once the lambda functions are triggered, you can't 
-# stop them. So queue removal may not serve any useful purpose.
-removeQueue <- function(queue) { invisible() }
-
-setExport <- function() { invisible() }
-setPackages <- function() { invisible() }
-setProgress <- function() { invisible() }
-setFtinterval <- function(value=30){ invisible() }
-setChunkSize <- function(value=1){ invisible() }
-
-# we will do all our reducing locally. could use another lambda
-# function to perform intermediate reduction in the future.
-setReduce <- function(fun=NULL){ 
-  if(!is.null(fun)) {
-    message("Reduce function passed, but not supported. Using .combine instead.")
-  }
-  return(assign("gather", TRUE, envir=.doRedisGlobals)) 
 }

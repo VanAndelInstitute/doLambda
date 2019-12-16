@@ -5,9 +5,7 @@
 #'
 #' @name doLambda-package
 #' 
-#' @useDynLib doLambda
 #' @seealso \code{\link{registerDoLambda}}
 #' @docType package
 NULL
 
-.doLambdaGlobals <- new.env(parent=emptyenv())
