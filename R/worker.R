@@ -17,8 +17,8 @@ lambdaWorker <- function() {
   key <- payload$Records[[1]]$s3$object$key
   bucket <- payload$Records[[1]]$s3$bucket$name
   dat <- s3readRDS(key, bucket)  
-  
+
   res <- eval(dat$expr, dat$envir, dat$enclos)
-  key <- gsub("$job_", "out_", key)
+  key <- gsub("jobs/", "outs/", key)
   s3saveRDS(res, key, bucket)  
 }

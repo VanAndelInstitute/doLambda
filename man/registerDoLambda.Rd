@@ -4,7 +4,13 @@
 \alias{registerDoLambda}
 \title{registerDoLambda}
 \usage{
-registerDoLambda(bucket, key = NULL, secret = NULL, region = NULL)
+registerDoLambda(
+  bucket,
+  key = NULL,
+  secret = NULL,
+  region = NULL,
+  throttle = 2
+)
 }
 \arguments{
 \item{bucket}{name of an S3 bucket you own that will hold the job queue}
@@ -14,6 +20,9 @@ registerDoLambda(bucket, key = NULL, secret = NULL, region = NULL)
 \item{secret}{AWS Secret Key.}
 
 \item{region}{AWS Default Region.}
+
+\item{throttle}{How long to pause between progress checks to play nice with 
+AWS endpoints. Minimum is 2 seconds (default)}
 }
 \value{
 nothing. Called for side effect of registering doParallel backend.

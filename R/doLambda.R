@@ -28,6 +28,8 @@
 #' @param key AWS Access Key. 
 #' @param secret AWS Secret Key. 
 #' @param region AWS Default Region. 
+#' @param throttle How long to pause between progress checks to play nice with 
+#' AWS endpoints. Minimum is 2 seconds (default)
 #' 
 #' @note If credentials are not provided (key, secret, and region), asw,signature 
 #' will be used to locate them by searching in the following order: environment 
@@ -42,8 +44,10 @@
 registerDoLambda <- function(bucket,
                              key=NULL,
                              secret=NULL,
-                             region=NULL)
+                             region=NULL,
+                             throttle = 2)
 {
+  throttle = max(throttle, 2)
   cred <- list()
   cred$key <- ifelse(!is.null(key),
                      key,
@@ -64,6 +68,7 @@ registerDoLambda <- function(bucket,
     stop("No AWS credentials provided (region).")
   
   assign("credentials", cred, envir = .doLambdaOptions)
+  assign("throttle", throttle, envir = .doLambdaOptions)
   if(!check_bucket(bucket)) 
     stop("Bucket not accessible and could not be created.")
   setDoPar(fun = doLambda,
@@ -149,21 +154,20 @@ doLambda <- function(obj, expr, envir, data) {
   
   if (!inherits(obj, 'foreach'))
     stop('obj must be a foreach object')
-  exportenv <- .makeEnv(obj, expr, envir)
+  frexportenv <- .makeEnv(obj, expr, envir)
   it <- iter(obj)
   argsList <- as.list(it)
   accumulator <- makeAccum(it)
   # make sure all of the necessary libraries have been loaded
   for (p in obj$packages)
     library(p, character.only=TRUE)
-  
   job <- 1
   for(a in argsList) {
     obj <- list( expr = expr, 
                  envir = a,
                  enclos = exportenv)
     with_cred(aws.s3::s3saveRDS,obj, 
-                      paste0(stackid, job, ".rds"), 
+                      paste0("jobs/", stackid, "_", job, ".rds"), 
                       data$bucket)
     job <- job + 1
   }
@@ -171,10 +175,25 @@ doLambda <- function(obj, expr, envir, data) {
   
   # poll for job completion...
   complete <- 0
+  incomplete <- 1:totjobs
+  attempts <- 0
   while(complete < totjobs) {
-    complete <- complete + 1
-    # count files in out
-    # update progress bar if applicable
+    notdone <- NULL
+    for(i in incomplete) {
+      job <- paste0("outs/", stackid, "_", i, ".rds") 
+      if(!suppressMessages(aws.s3::object_exists(job, data$bucket))) {
+        notdone <- c(notdone, i)
+      } else {
+        complete <- complete + 1
+      }
+    }
+    incomplete <- notdone
+    # update progress bar
+    cat(paste0("Attempt: ", attempts))
+    if(attempts>10) stop("Gave up after 10 attempts")
+    attempts <- attempts + 1
+    if(length(incomplete))
+      Sys.sleep(.doLambdaOptions$throttle)
   }
   
   # fetch results
