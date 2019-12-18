@@ -154,7 +154,7 @@ doLambda <- function(obj, expr, envir, data) {
   
   if (!inherits(obj, 'foreach'))
     stop('obj must be a foreach object')
-  frexportenv <- .makeEnv(obj, expr, envir)
+  exportenv <- .makeEnv(obj, expr, envir)
   it <- iter(obj)
   argsList <- as.list(it)
   accumulator <- makeAccum(it)
