@@ -198,12 +198,10 @@ doLambda <- function(obj, expr, envir, data) {
   
   # fetch results
   job <- 1
-  results <- foreach(a=argsList) %do% {
-    return(1)
-    res <- with_cred(aws.s3::s3readRDS, 
-                     paste0(stackid, "/outs/", jobid, job, ".rds"),
-                     bucket)
-    job <- job + 1
+  results <- foreach(i = 1:totjobs) %do% {
+    with_cred(aws.s3::s3readRDS, 
+                     paste0("outs/", stackid, "_", i, ".rds"),
+                     data$bucket)
   }
   accumulator(results, seq(along=results))
   
