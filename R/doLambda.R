@@ -36,7 +36,7 @@
 #' found, the function will throw an error.
 #'
 #' @return nothing. Called for side effect of registering doParallel backend.
-#' @importFrom foreach foreach %do%
+#' @importFrom foreach foreach %do% setDoPar
 #' @importFrom iterators iter
 #' @export
 registerDoLambda <- function(bucket,
@@ -48,24 +48,24 @@ registerDoLambda <- function(bucket,
   cred$key <- ifelse(!is.null(key),
                      key,
                      aws.signature::locate_credentials()$key)
-  if(!!nchar(cred$key))
-    stop("No AWS credentials provided.")
+  if(!nchar(cred$key))
+    stop("No AWS credentials provided (key).")
   
   cred$secret <- ifelse(!is.null(secret),
                         secret,
                         aws.signature::locate_credentials()$secret)
-  if(!!nchar(cred$key))
-    stop("No AWS credentials provided.")
+  if(!nchar(cred$secret))
+    stop("No AWS credentials provided (secret).")
   
   cred$region <- ifelse(!is.null(region),
                         region,
                         aws.signature::locate_credentials()$region)
-  if(!!nchar(cred$key))
-    stop("No AWS credentials provided.")
+  if(!nchar(cred$region))
+    stop("No AWS credentials provided (region).")
   
   assign("credentials", cred, envir = .doLambdaOptions)
-  if(!aws.s3::bucket_exists(bucket)) 
-    aws.s3::put_bucket(buckey, cred$region)
+  if(!check_bucket(bucket)) 
+    stop("Bucket not accessible and could not be created.")
   setDoPar(fun = doLambda,
            data = list(bucket = bucket),
            info = info)
@@ -80,9 +80,52 @@ info <- function(data, item) {
          NULL)
 }
 
+getKey <- function() {
+  .doLambdaOptions$credentials$key
+}
+
+getSecret <- function() {
+  .doLambdaOptions$credentials$secret
+}
+
+getRegion <- function() {
+  .doLambdaOptions$credentials$region
+}
+
+#
+# convenience wrapper to inject credentials so 
+# we don't need to perform credential lookup  
+# every time we make an AWS call.
+#
+with_cred <- function(f, ...) {
+  args <- list(...)
+  args$key <- getKey()
+  args$secret = getSecret()
+  args$region = getRegion()
+  do.call(f, args)
+}
+
+
+#
+# See if bucket exists, and create it if not
+# (if possible)
+#' @export
+check_bucket <- function(b) {
+  res <- with_cred(aws.s3::s3HTTP, verb="HEAD", bucket=b)
+  if(!res) {
+    tryCatch({
+      with_cred(aws.s3::put_bucket, b, location_constraint = getRegion())
+      res <- TRUE
+    }, error = function(e) {
+      res <- FALSE
+    })
+  }
+  res
+}
+
 lambdaExec <- function(path, bucket) {
   # load obj from S3
-  obj <- aws.s3::s3readRDS(path, bucket)
+  obj <- with_cred(aws.s3::s3readRDS, path, bucket) 
   expr <- obj$expr
   envir <- obj$envir
   enclos <- obj$enclos
@@ -106,12 +149,10 @@ doLambda <- function(obj, expr, envir, data) {
   
   if (!inherits(obj, 'foreach'))
     stop('obj must be a foreach object')
-  
   exportenv <- .makeEnv(obj, expr, envir)
   it <- iter(obj)
   argsList <- as.list(it)
   accumulator <- makeAccum(it)
-  
   # make sure all of the necessary libraries have been loaded
   for (p in obj$packages)
     library(p, character.only=TRUE)
@@ -119,10 +160,11 @@ doLambda <- function(obj, expr, envir, data) {
   job <- 1
   for(a in argsList) {
     obj <- list( expr = expr, 
-                 envir = envir,
-                 enclos = exportenv,
-                 arg = a)
-    aws.s3::s3saveRDS(obj, paste0(stackid, job, ".rds"), bucket)
+                 envir = a,
+                 enclos = exportenv)
+    with_cred(aws.s3::s3saveRDS,obj, 
+                      paste0(stackid, job, ".rds"), 
+                      data$bucket)
     job <- job + 1
   }
   totjobs <- job - 1
@@ -130,6 +172,7 @@ doLambda <- function(obj, expr, envir, data) {
   # poll for job completion...
   complete <- 0
   while(complete < totjobs) {
+    complete <- complete + 1
     # count files in out
     # update progress bar if applicable
   }
@@ -137,7 +180,10 @@ doLambda <- function(obj, expr, envir, data) {
   # fetch results
   job <- 1
   results <- foreach(a=argsList) %do% {
-    res <- aws.s3::s3readRDS(paste0(stackid, "/outs/", jobid, job, ".rds"), bucket)
+    return(1)
+    res <- with_cred(aws.s3::s3readRDS, 
+                     paste0(stackid, "/outs/", jobid, job, ".rds"),
+                     bucket)
     job <- job + 1
   }
   accumulator(results, seq(along=results))
@@ -173,29 +219,21 @@ doLambda <- function(obj, expr, envir, data) {
   },
   # otherwise we create a new environment from scratch
   error=function(e) {
+    print("hi")
     new.env(parent=emptyenv())
   })
+  vars <- ls(exportenv)
   
   # don't export explicitly blacklisted variables, nor the iterator variable
   noexport <- union(obj$noexport, obj$argnames)
   
   # load everything else from calling environment into our new environment 
-  getexports(expr, exportenv, envir, good=ls(envir), bad=noexport)
-  
-  # load requested objects from outside the calling environment
-  export <- unique(obj$export)
+
+  export <- expandsyms(getsyms(expr), good=character(0), bad=character(0), envir)
+  export <- unique(c(obj$export, export))
   ignore <- intersect(export, vars)
   export <- setdiff(export, ignore)
-  for (sym in export) {
-    if (!exists(sym, envir, inherits=TRUE))
-      stop(sprintf('unable to find variable "%s"', sym))
-    val <- get(sym, envir, inherits=TRUE)
-    if (is.function(val) &&
-        (identical(environment(val), .GlobalEnv) ||
-         identical(environment(val), envir))) {
-      environment(val) <- exportenv
-    }
-    assign(sym, val, pos=exportenv, inherits=FALSE)
-  }
+  getexports(expr, exportenv, envir, good=export, bad=noexport)
+  parent.env(exportenv) <- .GlobalEnv
   exportenv
 }
