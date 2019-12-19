@@ -1,3 +1,5 @@
+library(aws.s3)
+
 # Sneaking this file into the R directory at installation as it gets 
 # directly sourced by our lambda bootstrap function.
 lambdaWorker <- function(bucket, key) {
