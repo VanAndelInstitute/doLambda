@@ -12,10 +12,11 @@ lambdaWorker <- function(bucket, key) {
 #args = commandArgs(trailingOnly=TRUE)
 #print(args)
 
+id <- basename(tempfile(pattern=""))
 for(i in 1:10) {
   ROOT <- Sys.getenv("AWS_LAMBDA_RUNTIME_API")
   EVENT_DATA <- httr::GET(paste0("http://", ROOT, "/2018-06-01/runtime/invocation/next"))
-  aws.s3::s3saveRDS(EVENT_DATA, paste0("eventdata", i, ".rds"), "jlab-test-4")
+  aws.s3::s3saveRDS(EVENT_DATA, paste0("eventdata_", id, "_", i, ".rds"), "jlab-test-4")
   #library(doLambda)
   #library(aws.s3)
   #lambdaWorker(args[1], args[2])  
