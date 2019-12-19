@@ -32,4 +32,4 @@ httr::POST(paste0("http://",
                   "/2018-06-01/runtime/invocation/",
                   REQUEST_ID, 
                   "/response"),
-           body = "OK!")
+           body = "SUCCESS!", encode="form")

@@ -181,16 +181,20 @@ doLambda <- function(obj, expr, envir, data) {
     notdone <- NULL
     for(i in incomplete) {
       job <- paste0("outs/", stackid, "_", i, ".rds") 
-      if(!suppressMessages(aws.s3::object_exists(job, data$bucket))) {
+      if(!suppressMessages(with_cred(aws.s3::object_exists,
+                                     job,
+                                     data$bucket))) {
         notdone <- c(notdone, i)
       } else {
+        job <- gsub("^outs/", "jobs/", job)
+        with_cred(aws.s3::delete_object, job, data$bucket)
         complete <- complete + 1
       }
     }
     incomplete <- notdone
     # update progress bar
-    cat(paste0("Attempt: ", attempts))
-    if(attempts>3) stop("Gave up after 10 attempts")
+    cat(paste0(complete, " out of ", totjobs, " jobs complete."))
+    if(attempts>3) stop("Gave up after 3 attempts")
     attempts <- attempts + 1
     if(length(incomplete))
       Sys.sleep(.doLambdaOptions$throttle)
@@ -199,9 +203,12 @@ doLambda <- function(obj, expr, envir, data) {
   # fetch results
   job <- 1
   results <- foreach(i = 1:totjobs) %do% {
-    with_cred(aws.s3::s3readRDS, 
+    res <- with_cred(aws.s3::s3readRDS, 
                      paste0("outs/", stackid, "_", i, ".rds"),
                      data$bucket)
+    with_cred(aws.s3::delete_object, 
+              paste0("outs/", stackid, "_", i, ".rds"), 
+              data$bucket)
   }
   accumulator(results, seq(along=results))
   
