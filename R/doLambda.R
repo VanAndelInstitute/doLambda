@@ -128,19 +128,6 @@ check_bucket <- function(b) {
   res
 }
 
-lambdaExec <- function(path, bucket) {
-  # load obj from S3
-  obj <- with_cred(aws.s3::s3readRDS, path, bucket) 
-  expr <- obj$expr
-  envir <- obj$envir
-  enclos <- obj$enclos
-  arg <- obj$arg
-  c.expr <- compiler::compile(expr, env=envir, options=list(suppressUndefined=TRUE))
-  res <- eval(c.expr, envir=arg, enclos = enclos)
-  # write result to S3
-  # remove job from S3
-}
-
 idgen <- function() {
   time_ms <- paste0(round(as.numeric(Sys.time())*1000))
   paste(Sys.getpid(), 
@@ -193,8 +180,8 @@ doLambda <- function(obj, expr, envir, data) {
     }
     incomplete <- notdone
     # update progress bar
-    cat(paste0(complete, " out of ", totjobs, " jobs complete."))
-    if(attempts>3) stop("Gave up after 3 attempts")
+    cat(paste0(complete, " out of ", totjobs, " jobs complete.\n"))
+    # if(attempts>3) stop("Gave up after 3 attempts")
     attempts <- attempts + 1
     if(length(incomplete))
       Sys.sleep(.doLambdaOptions$throttle)
@@ -209,6 +196,7 @@ doLambda <- function(obj, expr, envir, data) {
     with_cred(aws.s3::delete_object, 
               paste0("outs/", stackid, "_", i, ".rds"), 
               data$bucket)
+    res
   }
   accumulator(results, seq(along=results))
   
@@ -243,7 +231,6 @@ doLambda <- function(obj, expr, envir, data) {
   },
   # otherwise we create a new environment from scratch
   error=function(e) {
-    print("hi")
     new.env(parent=emptyenv())
   })
   vars <- ls(exportenv)

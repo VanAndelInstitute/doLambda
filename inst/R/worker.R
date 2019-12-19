@@ -21,7 +21,6 @@ REQUEST_ID <- EVENT_DATA$headers$`lambda-runtime-aws-request-id`
 res <- httr::content(EVENT_DATA)
 bucket <- res$Records[[1]]$s3$bucket$name
 key <- res$Records[[1]]$s3$object$key
-aws.s3::s3saveRDS(EVENT_DATA, paste0("eventdata_", id, "_", 1, ".rds"), "jlab-test-4")
 
 print(paste0("Running job with key ", key, " in bucket ", bucket, "."))
 lambdaWorker(bucket, key)  
