@@ -23,5 +23,6 @@ lambdaWorker <- function(bucket, key) {
 # call lambdaWorker if this script was sourced directly 
 # (as is done by our lambda bootstrap script)
 if(exists("args") && length(args) == 2) {
+  library(doLambda)
   lambdaWorker(args[1], args[2])  
 }
