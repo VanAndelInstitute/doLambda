@@ -4,7 +4,12 @@
 \alias{lambdaWorker}
 \title{lambdaWorker}
 \usage{
-lambdaWorker()
+lambdaWorker(bucket, key)
+}
+\arguments{
+\item{bucket}{name of an S3 bucket you own that will hold the job queue}
+
+\item{key}{AWS Access Key.}
 }
 \value{
 nothing. Called for side effect of doing a unit of work.
@@ -14,5 +19,7 @@ Retrieve job and execute it.
 }
 \note{
 This function is automatically called (by the boostrap script) when the 
-lambda job is triggered. It typically is never used on the client end.
+lambda job is triggered. It typically is never used on the client end. It is
+assumed that the lambda function is executed by a role that has read and write
+permissions for the specified S3 bucket.
 }
