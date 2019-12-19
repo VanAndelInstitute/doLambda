@@ -14,9 +14,9 @@ lambdaWorker <- function(bucket, key) {
 
 ROOT <- Sys.getenv("AWS_LAMBDA_RUNTIME_API")
 EVENT_DATA <- httr::GET(paste0("http://", ROOT, "/2018-06-01/runtime/invocation/next"))
-aws.s3::s3saveRDS(EVENT_DATA, "event_data_1.rds", "jlab-test")
+aws.s3::s3saveRDS(EVENT_DATA, "eventdata1.rds", "jlab-test-4")
 EVENT_DATA <- httr::GET(paste0("http://", ROOT, "/2018-06-01/runtime/invocation/next"))
-aws.s3::s3saveRDS(EVENT_DATA, "event_data_2.rds", "jlab-test")
+aws.s3::s3saveRDS(EVENT_DATA, "eventdata2.rds", "jlab-test-4")
 #library(doLambda)
 #library(aws.s3)
 #lambdaWorker(args[1], args[2])  
