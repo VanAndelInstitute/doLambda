@@ -3,7 +3,9 @@ library(aws.s3)
 # Sneaking this file into the R directory at installation as it gets 
 # directly sourced by our lambda bootstrap function.
 lambdaWorker <- function(bucket, key) {
+  print(paste0("Attempting to retrieve ", key, " from ", bucket))
   dat <- s3readRDS(key, bucket)  
+  print(paste0("Done."))
   res <- eval(dat$expr, dat$envir, dat$enclos)
   key <- gsub("jobs/", "outs/", key)
   print("Saving res to ")
