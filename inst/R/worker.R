@@ -24,7 +24,7 @@ key <- res$Records[[1]]$s3$object$key
 aws.s3::s3saveRDS(EVENT_DATA, paste0("eventdata_", id, "_", 1, ".rds"), "jlab-test-4")
 
 print(paste0("Running job with key ", key, " in bucket ", bucket, "."))
-lambdaWorker(key, bucket)  
+lambdaWorker(bucket, key)  
 print("Done.")
 
 httr::POST(paste0("http://", 
