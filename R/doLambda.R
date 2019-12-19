@@ -190,7 +190,7 @@ doLambda <- function(obj, expr, envir, data) {
     incomplete <- notdone
     # update progress bar
     cat(paste0("Attempt: ", attempts))
-    if(attempts>10) stop("Gave up after 10 attempts")
+    if(attempts>3) stop("Gave up after 10 attempts")
     attempts <- attempts + 1
     if(length(incomplete))
       Sys.sleep(.doLambdaOptions$throttle)
