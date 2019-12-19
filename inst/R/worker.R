@@ -9,12 +9,12 @@ lambdaWorker <- function(bucket, key) {
   s3saveRDS(res, key, bucket)  
 }
 
-print("Calling Lambda Worker")
+args = commandArgs(trailingOnly=TRUE)
 print(args)
 
-if(exists("args") && length(args) == 2) {
+if(length(args) == 2) {
   library(doLambda)
   library(aws.s3)
   lambdaWorker(args[1], args[2])  
-  print(done)
+  print("done")
 }
