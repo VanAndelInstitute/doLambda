@@ -4,11 +4,17 @@ lambdaWorker <- function(bucket, key) {
   dat <- s3readRDS(key, bucket)  
   res <- eval(dat$expr, dat$envir, dat$enclos)
   key <- gsub("jobs/", "outs/", key)
+  print("Saving res to ")
+  print(paste0(bucket, "/", key))
   s3saveRDS(res, key, bucket)  
 }
+
+print("Calling Lambda Worker")
+print(args)
 
 if(exists("args") && length(args) == 2) {
   library(doLambda)
   library(aws.s3)
   lambdaWorker(args[1], args[2])  
+  print(done)
 }
