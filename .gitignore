@@ -36,5 +36,9 @@ vignettes/*.pdf
 *.utf8.md
 *.knit.md
 
+# Other temporary files
+temp*
+*.zip
+
 # Shiny token, see https://shiny.rstudio.com/articles/shinyapps.html
 rsconnect/

@@ -6,7 +6,7 @@ lambdaWorker <- function(bucket, key) {
   print(paste0("Attempting to retrieve ", key, " from ", bucket))
   dat <- s3readRDS(key, bucket)  
   print(paste0("Done."))
-  res <- eval(dat$expr, envir = dat$envir, enclo = dat$enclos)
+  res <- eval(dat$expr, envir = dat$envir, enclos = dat$enclos)
   key <- gsub("jobs/", "outs/", key)
   print("Saving res to ")
   print(paste0(bucket, "/", key))
